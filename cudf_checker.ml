@@ -38,10 +38,10 @@ type bad_solution_reason =
 let explain_reason = function
   | `Unsat_dep ((name, ver), fmla) ->
       sprintf "Cannot satisfy dependencies %s of package %s (version %d)"
-	(PP.string_of_vpkgformula fmla) name ver
+	(PP.string_of_vpkgformula fmla) (string_of_pkgname name) ver
   | `Conflict ((name, ver), pkgs) ->
       sprintf "Unresolved conflicts %s of package %s (version %d)"
-	(PP.string_of_vpkglist pkgs) name ver
+	(PP.string_of_vpkglist pkgs) (string_of_pkgname name) ver
   | `Missing_install vpkgs ->
       "Unmet installation request, missing packages: " ^
 	PP.string_of_vpkglist vpkgs
@@ -55,27 +55,28 @@ let explain_reason = function
       "Unmet upgrade request, not-upgraded: " ^
 	PP.string_of_vpkglist vpkgs
   | `Multi_upgrade pkgs ->
-      "Unmet upgrade request, not-unique: " ^ String.concat ", " pkgs
+    "Unmet upgrade request, not-unique: " ^
+    String.concat ", " (List.map string_of_pkgname pkgs)
   | `Not_kept (name, ver, keep) ->
       sprintf "Unmet \"Keep\" request %s of package %s (version %d)"
-	(PP.string_of_keep keep) name ver
+	(PP.string_of_keep keep) (string_of_pkgname name) ver
 
 (* XXX not tail-recursive *)
 let satisfy_formula univ fmla =
-  let reason = ref [] in
+  let reason = ref [||] in
   let sat_pkg = mem_installed ~include_features:true univ in
   let sat =
-    match List.filter (!! (List.exists sat_pkg)) fmla with
-	[] -> true
+    match Array.filter (!! (Array.exists sat_pkg)) fmla with
+	[||] -> true
       | unsat -> reason := unsat ; false
   in
     sat, !reason
 
 let disjoint univ ?ignore pkgs =
   match
-    List.filter (mem_installed ?ignore ~include_features:true univ) pkgs
+    Array.filter (mem_installed ?ignore ~include_features:true univ) pkgs
   with
-    | [] -> true, []
+    | [||] -> true, [||]
     | pkgs -> false, pkgs
 
 let is_consistent univ =
@@ -106,63 +107,64 @@ let is_solution (univ, req) sol =
       prerr_endline ("WARNING: solution contains not-installed packages,"
 		     ^ " they have been ignored")
   in
-  let sat vpkg = fst (satisfy_formula sol [[vpkg]]) in
-  let and_formula = List.map (fun vpkg -> [(vpkg :> vpkg)]) in
+  let sat vpkg = fst (satisfy_formula sol [|[|vpkg|]|]) in
+  let and_formula = Array.map (fun vpkg -> [|(vpkg :> vpkg)|]) in
   let is_succ () = (* XXX not implemented, as it will be pointless with a
 		      diff-like encoding of solutions *)
     true, [] in
   let is_cons () =	(* check solution consistency (i.e., dep./conflicts) *)
     match is_consistent sol with
-      | true, _ -> true, []
-      | false, None -> assert false
-      | false, Some reason -> false, [reason] in
+    | true, _ -> true, []
+    | false, None -> assert false
+    | false, Some reason -> false, [reason] in
   let install_ok () =	(* check "Install" property semantics *)
-    match List.filter (!! sat) req.install with
-      | [] -> true, []
-      | l -> false, [`Missing_install l] in
+    match Array.filter (!! sat) req.install with
+    | [||] -> true, []
+    | l -> false, [`Missing_install l] in
   let remove_ok () =	(* check "Remove" property semantics *)
     match disjoint sol req.remove with
-      | true, _ -> true, []
-      | false, pkgs -> false, [`Unremoved pkgs] in
+    | true, _ -> true, []
+    | false, pkgs -> false, [`Unremoved pkgs] in
   let upgrade_ok () =	(* check "Upgrade" property semantics *)
-    match List.filter (!! sat) req.upgrade with
-      | (_ :: _) as l -> false, [`Missing_upgrade l]
-      | [] ->
-	  let versions_of univ name =
-	    List.map	(* real packages *)
-	      (fun pkg -> Some pkg.version)
-	      (get_installed univ name)
-	    @ List.map	(* virtual packages; "None" means "all versions" *)
-	      (fun (_pkg, version) -> version)
-	      (who_provides univ (name, None)) in
-	  let res =
-	    List.fold_left
-	      (fun (ok, downgrades, multi) ((name, _constr) as vpkg) ->
-		 match List.unique (versions_of sol name) with
-		   | [Some v] ->
-		       let old_installed = versions_of univ name in
-			 if not (List.for_all
-				   (function Some v' -> v' <= v | None -> false)
-				   (* XXX: this None will report attempted
-				      upgrade of unversioned virtual packages
-				      as downgrades. Maybe right, maybe not *)
-				   old_installed)
-			 then
-			   false, vpkg :: downgrades, multi
-			 else
-			   true && ok, downgrades, multi
-		   | [] -> (* impossible: cause the formula is satisfied *)
-		       assert false
-		   | _ -> false, downgrades, name :: multi)
-	      (true, [], [])
-	      req.upgrade
-	  in
-	    (match res with
-	       | true, _, _ -> true, []
-	       | false, downgrades, multi ->
-		   false,
-		   (if downgrades <> [] then [`Downgrade downgrades] else [])
-		   @ (if multi <> [] then [`Multi_upgrade multi] else []))
+    let l = Array.filter (!! sat) req.upgrade in
+    if Array.length l > 0 then
+      false, [`Missing_upgrade l]
+    else
+      let versions_of univ name =
+	List.map	(* real packages *)
+	  (fun pkg -> Some pkg.version)
+	  (get_installed univ name)
+	@ List.map	(* virtual packages; "None" means "all versions" *)
+	  (fun (_pkg, version) -> version)
+	  (who_provides univ (name, `None, 0)) in
+      let res =
+	Array.fold_left
+	  (fun (ok, downgrades, multi) ((name, _relop, _ver) as vpkg) ->
+	     match List.unique (versions_of sol name) with
+	     | [Some v] ->
+	       let old_installed = versions_of univ name in
+	       if not (List.for_all
+			 (function Some v' -> v' <= v | None -> false)
+			 (* XXX: this None will report attempted
+			    upgrade of unversioned virtual packages
+			    as downgrades. Maybe right, maybe not *)
+			 old_installed)
+	       then
+		 false, vpkg :: downgrades, multi
+	       else
+		 true && ok, downgrades, multi
+	     | [] -> (* impossible: cause the formula is satisfied *)
+	       assert false
+	     | _ -> false, downgrades, name :: multi)
+	  (true, [], [])
+	  req.upgrade
+      in
+      (match res with
+       | true, _, _ -> true, []
+       | false, downgrades, multi ->
+	 false,
+	 (if downgrades <> [] then [`Downgrade (Array.of_list downgrades)] else [])
+	 @ (if multi <> [] then [`Multi_upgrade multi] else []))
   in
   let keep_ok () =	(* check "Keep" property semantics *)
     let to_be_kept =
@@ -172,21 +174,21 @@ let is_solution (univ, req) sol =
       (fun (ok, reasons) pkg ->
 	 let pkg_ok =
 	   match pkg.keep with
-	     | `Keep_version ->
-		 (try
-		    (lookup_package sol (pkg.package, pkg.version)).installed
-		  with Not_found -> false)
-	     | `Keep_package ->
-		 mem_installed ~include_features:false sol (pkg.package, None)
-	     | `Keep_feature ->
-		 fst (satisfy_formula sol (and_formula pkg.provides))
-	     | _ -> assert false	(* [get_packages ~filter] is broken *)
+	   | `Keep_version ->
+	     (try
+		(lookup_package sol (pkg.package, pkg.version)).installed
+	      with Not_found -> false)
+	   | `Keep_package ->
+	     mem_installed ~include_features:false sol (pkg.package, `None, 0)
+	   | `Keep_feature ->
+	     fst (satisfy_formula sol (and_formula pkg.provides))
+	   | _ -> assert false	(* [get_packages ~filter] is broken *)
 	 in
 	 if pkg_ok then
 	   ok, reasons
 	 else
 	   false,
-	 (`Not_kept (pkg.package, pkg.version, pkg.keep)) :: reasons)
+	   (`Not_kept (pkg.package, pkg.version, pkg.keep)) :: reasons)
       (true, [])
       to_be_kept
   in
@@ -196,4 +198,3 @@ let is_solution (univ, req) sol =
        res && is_sol, msg @ msgs)
     (true, [])
     [is_succ; is_cons; install_ok; remove_ok; upgrade_ok; keep_ok]
-

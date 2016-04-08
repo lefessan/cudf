@@ -50,13 +50,13 @@ type cudf_doc = preamble option * package list * request
 type cudf_item =
     [ `Preamble of preamble | `Package of package | `Request of request ]
 type universe = {
-  id2pkg: ((string * int), package) Hashtbl.t;	(** <name, ver> -> pkg *)
-  name2pkgs: (string, package list ref) Hashtbl.t; (** name -> pkg list ref *)
+  id2pkg: ((pkgname * int), package) Hashtbl.t;	(** <name, ver> -> pkg *)
+  name2pkgs: (pkgname, package list ref) Hashtbl.t; (** name -> pkg list ref *)
   uid2pkgs: (int, package) Hashtbl.t; (** int uid -> pkg *)
   id2uid: ((pkgname * version), int) Hashtbl.t; (** <name, ver> -> int uid *)
-  features: (string, (package * version option) list ref) Hashtbl.t;
+  features: (pkgname, (package * version option) list ref) Hashtbl.t;
   (** feature -> avail feature versions
-      Each available feature is reported as a pair 
+      Each available feature is reported as a pair
       <owner, provided version>, where owner is the package
       providing it. Provided version "None" means "all possible
       versions" *)
@@ -87,11 +87,11 @@ let default_preamble = {
 }
 
 let default_package = {
-  package = "" ;
+  package = Cudf_types.pkgname_of_string "" ;
   version = 0 ;
-  depends = [] ;
-  conflicts = [] ;
-  provides = [] ;
+  depends = [||] ;
+  conflicts = [||] ;
+  provides = [||] ;
   installed = false ;
   was_installed = false ;
   keep = `Keep_none ;
@@ -100,9 +100,9 @@ let default_package = {
 
 let default_request = {
   request_id = "" ;
-  install = [] ;
-  remove = [] ;
-  upgrade = [] ;
+  install = [||] ;
+  remove = [||] ;
+  upgrade = [||] ;
   req_extra = [] ;
 }
 
@@ -124,16 +124,17 @@ let get_hash_list h n = try !(Hashtbl.find h n) with Not_found -> []
 (** process all features (i.e., Provides) provided by a given package
     and fill with them a given feature table *)
 let expand_features pkg features =
-    List.iter
+    Array.iter
       (function
-        | name, None -> add_to_hash_list features name (pkg, None)
-        | name, Some (_, ver) -> add_to_hash_list features name (pkg, (Some ver)))
+        | name, `None, _ -> add_to_hash_list features name (pkg, None)
+        | name, _, ver -> add_to_hash_list features name (pkg, Some ver))
       pkg.provides
 
 let add_package_aux univ pkg uid =
   let id = pkg.package, pkg.version in
   if Hashtbl.mem univ.id2pkg id then
-    raise (Constraint_violation (sprintf "duplicate package: <%s, %d>" pkg.package pkg.version))
+    raise (Constraint_violation (sprintf "duplicate package: <%s, %d>"
+                                   (string_of_pkgname pkg.package) pkg.version))
   else begin
     Hashtbl.add univ.uid2pkgs uid pkg;
     Hashtbl.add univ.id2uid id uid;
@@ -160,14 +161,14 @@ let remove_package univ id =
     if List.length !l = 0 then
       Hashtbl.remove univ.name2pkgs p.package;
 
-    List.iter
+    Array.iter
       (function
-      | name, None ->
+      | name, `None, _ ->
           let l = Hashtbl.find univ.features name in
           l := List.remove !l (p, None);
           if List.length !l = 0 then
             Hashtbl.remove univ.features name
-      | name, Some (_, ver) ->
+      | name, _, ver ->
           let l = Hashtbl.find univ.features name in
           l := List.remove !l (p, (Some ver));
           if List.length !l = 0 then
@@ -231,6 +232,7 @@ let (|=) v = function
   | Some (`Gt, v') -> v > v'
   | Some (`Leq, v') -> v <= v'
   | Some (`Lt, v') -> v < v'
+  | Some (`None, _) -> assert false
 
 let version_matches = (|=)
 
@@ -248,7 +250,7 @@ let status univ =
   univ'.univ_size <- univ.inst_size; (* as we filtered on installed pkgs *)
   univ'
 
-let lookup_packages ?(filter=None) univ pkgname = 
+let lookup_packages ?(filter=None) univ pkgname =
   let packages = get_hash_list univ.name2pkgs pkgname in
     match filter with
 	None -> packages
@@ -258,7 +260,10 @@ let get_installed univ pkgname =
   List.filter (fun { installed = i } -> i) (lookup_packages univ pkgname)
 
 let mem_installed ?(include_features = true) ?(ignore = fun _ -> false)
-    univ (name, constr) =
+    univ (name, relop, ver) =
+  let constr = match relop with
+      `None -> None
+    | relop -> Some (relop, ver) in
   let pkg_filter = fun pkg -> not (ignore pkg) in
   let mem_feature constr =
     let feats = get_hash_list univ.features name in
@@ -272,11 +277,14 @@ let mem_installed ?(include_features = true) ?(ignore = fun _ -> false)
     List.exists (fun pkg -> pkg.version |= constr) pkgs
     || (include_features && mem_feature constr)
 
-let who_provides ?(installed=true) univ (pkgname, constr) =
+let who_provides ?(installed=true) univ (pkgname, relop, ver) =
+  let constr = match relop with
+      `None -> None
+    | relop -> Some (relop, ver) in
   List.filter
-    (function 
+    (function
       |pkg , _ when not pkg.installed && installed -> false
-      |_, None -> true 
+      |_, None -> true
       | _, Some v -> v |= constr
     )
     (get_hash_list univ.features pkgname)

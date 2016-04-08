@@ -203,7 +203,7 @@ let parse_item' p =
 let parse_item p = snd (parse_item' p)
 
 let get_postmark = function
-  | `Package pkg -> pkg.package
+  | `Package pkg -> string_of_pkgname pkg.package
   | `Request req -> req.request_id
   | `Preamble pre -> pre.preamble_id
 
@@ -242,7 +242,7 @@ let parse p =
        "trailing stanzas after final request stanza"
    with End_of_file -> ());
   (!pre, List.rev !pkgs, !req)
-  
+
 
 let load p =
   let pre, pkgs, req = parse p in
@@ -257,7 +257,7 @@ let load_solution p univ =
       with Not_found ->
 	parse_error dummy_loc
 	  (sprintf "unknown package (%s,%d) found in solution"
-	     pkg.package pkg.version)
+	     (string_of_pkgname pkg.package) pkg.version)
     in
     { old_pkg with installed = pkg.installed } in
   let sol_univ = load_universe (List.map expand_package sol_pkgs) in

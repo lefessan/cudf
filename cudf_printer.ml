@@ -33,7 +33,8 @@ let pp_package_gen ~pp_property out pkg =
   if pkg.conflicts <> default_package.conflicts then
     pp ("conflicts", string_of_vpkglist pkg.conflicts);
   if pkg.provides <> default_package.provides then
-    pp ("provides", string_of_vpkglist (pkg.provides :> vpkg list));
+    pp ("provides", string_of_vpkglist
+          (Array.of_list (Array.to_list pkg.provides :> vpkg list)));
   if pkg.installed <> default_package.installed then
     pp ("installed", string_of_bool pkg.installed);
   if pkg.was_installed <> default_package.was_installed then
@@ -134,4 +135,3 @@ let pp_io_item out i =
   pp_item_gen ~pp_package:pp_io_package ~pp_request:pp_io_request
     ~pp_preamble:pp_io_preamble
     out i
-

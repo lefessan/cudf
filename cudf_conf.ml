@@ -25,9 +25,9 @@ let preamble_typedecl = [
 let package_typedecl = [
   "package",		`Pkgname None ;
   "version",		`Posint None ;
-  "depends",		`Vpkgformula (Some []) ;
-  "conflicts",		`Vpkglist (Some []) ;
-  "provides",		`Veqpkglist (Some []) ;
+  "depends",		`Vpkgformula (Some [||]) ;
+  "conflicts",		`Vpkglist (Some [||]) ;
+  "provides",		`Veqpkglist (Some [||]) ;
   "installed",		`Bool (Some false) ;
   "was-installed",	`Bool (Some false) ;
   "keep",		`Enum (keep_enums, Some "none") ;
@@ -35,9 +35,9 @@ let package_typedecl = [
 
 let request_typedecl = [
   "request",		`String None ;
-  "install",		`Vpkglist (Some []) ;
-  "remove",		`Vpkglist (Some []) ;
-  "upgrade",		`Vpkglist (Some []) ;
+  "install",		`Vpkglist (Some [||]) ;
+  "remove",		`Vpkglist (Some [||]) ;
+  "upgrade",		`Vpkglist (Some [||]) ;
 ]
 
 
