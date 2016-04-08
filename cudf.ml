@@ -217,12 +217,14 @@ let fold_packages_by_name f a univ =
 let package_names univ = List.of_enum (Hashtbl.keys univ.name2pkgs)
 
 let get_packages ?filter univ =
+  let packages =
   match filter with
     | None -> fold_packages (fun acc pkg -> pkg :: acc) [] univ
     | Some test ->
 	fold_packages
 	  (fun acc pkg -> if test pkg then pkg :: acc else acc)
 	  [] univ
+  in Array.of_list packages
 
 let (|=) v = function
   | None -> true

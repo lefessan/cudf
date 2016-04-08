@@ -170,7 +170,7 @@ let is_solution (univ, req) sol =
     let to_be_kept =
       get_packages
 	~filter:(fun pkg -> pkg.installed && pkg.keep <> `Keep_none) univ in
-    List.fold_left
+    Array.fold_left
       (fun (ok, reasons) pkg ->
 	 let pkg_ok =
 	   match pkg.keep with

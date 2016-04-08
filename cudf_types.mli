@@ -32,7 +32,7 @@ val string_of_pkgname : pkgname -> string
 val pkgname_of_string : string -> pkgname
 (* Clear cache of pkgnames *)
 val clear_pkgnames : unit -> unit
-
+module PkgnameSet : (Set.S with type elt = pkgname)
 
 type vpkg = pkgname * relop * version
 type vpkglist = vpkg array

@@ -23,6 +23,8 @@ module Pkgname : sig
   val of_string : string -> t
   val of_int : int -> t
   val clear : unit -> unit
+
+  module Set : (Set.S with type elt = t)
 end = struct
 
   type t = string
@@ -35,6 +37,8 @@ end = struct
   let to_string s = s
   let of_int n = string_of_int n
   let clear () = Hashtbl.clear tbl
+
+  module Set = Set.Make(String)
 end
 
 type pkgname = Pkgname.t
@@ -42,6 +46,7 @@ let pkgname_of_string = Pkgname.of_string
 let string_of_pkgname = Pkgname.to_string
 let pkgname_of_int = Pkgname.of_int
 let clear_pkgnames = Pkgname.clear
+module PkgnameSet = Pkgname.Set
 
 type vpkg = pkgname * relop * version
 type vpkglist = vpkg array

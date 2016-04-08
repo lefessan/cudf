@@ -195,7 +195,7 @@ val package_names : universe -> pkgname list
 
     @param filter only return packages matching a given
     predicate. Default is to return all packages *)
-val get_packages : ?filter:(package -> bool) -> universe -> package list
+val get_packages : ?filter:(package -> bool) -> universe -> package array
 
 (** total numer of available packages (no matter whether they are
     installed or not) *)
