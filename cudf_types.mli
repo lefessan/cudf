@@ -20,16 +20,22 @@
 
 (** {5 CUDF types} *)
 
-type version = int	(* required to be non 0 *)
-type relop = [`Eq | `Neq | `Geq | `Gt | `Leq | `Lt]
+type version = int	(* required to be non 0, 0 is for `None *)
+type relop = [`Eq | `Neq | `Geq | `Gt | `Leq | `Lt | `None]
 type constr = (relop * version) option
 
 
 (** {6 CUDF spec. types} *)
 
-type pkgname = string
-type vpkg = pkgname * constr
-type vpkglist = vpkg list
+type pkgname
+val string_of_pkgname : pkgname -> string
+val pkgname_of_string : string -> pkgname
+(* Clear cache of pkgnames *)
+val clear_pkgnames : unit -> unit
+module PkgnameSet : (Set.S with type elt = pkgname)
+
+type vpkg = pkgname * relop * version
+type vpkglist = vpkg array
 type enum_keep = [`Keep_version | `Keep_package | `Keep_feature | `Keep_none ]
 
 (** CNF formula. Inner lists are OR-ed, outer AND-ed.
@@ -38,10 +44,10 @@ type enum_keep = [`Keep_version | `Keep_package | `Keep_feature | `Keep_none ]
     - "Depends: true!"			-->	[ ]
     - "Depends: false!"			-->	[ [] ]
 *)
-type vpkgformula = vpkg list list
+type vpkgformula = vpkg array array
 
-type veqpkg = pkgname * ([`Eq] * version) option
-type veqpkglist = veqpkg list
+type veqpkg = pkgname * [`Eq | `None] * version
+type veqpkglist = veqpkg array
 
 (** CUDF types *)
 type typ =
@@ -81,7 +87,7 @@ type typed_value =
     | `Nat of int
     | `Bool of bool
     | `String of string
-    | `Pkgname of string
+    | `Pkgname of pkgname
     | `Ident of string
     | `Enum of string list * string
     | `Vpkg of vpkg
@@ -176,4 +182,3 @@ exception Type_error of typ * typed_value * loc
 
 (** Check whether a formula uses only equality tests over package versions. *)
 val is_eq_formula : vpkgformula ->  bool
-

@@ -112,7 +112,7 @@ let string_of_keep = function
   | `Keep_feature -> "feature"
   | `Keep_none -> "none"
 
-let string_of_pkgname pkgname = pkgname
+let string_of_pkgname pkgname = Cudf_types.string_of_pkgname pkgname
 let string_of_version = string_of_int
 
 let string_of_relop = function
@@ -122,10 +122,12 @@ let string_of_relop = function
   | `Gt -> ">"
   | `Leq -> "<="
   | `Lt -> "<"
+  | `None -> assert false
 
 let string_of_vpkg = function
-    (name, None) -> name
-  | (name, Some (relop, v)) -> sprintf "%s %s %d" name (string_of_relop relop) v
+    (name, `None, _) -> Cudf_types.string_of_pkgname name
+  | (name, relop, v) -> sprintf "%s %s %d"
+                          (Cudf_types.string_of_pkgname name) (string_of_relop relop) v
 
 let string_of_list string_of_item sep l =
   let buf = Buffer.create 1023 in
@@ -137,14 +139,14 @@ let string_of_list string_of_item sep l =
         Buffer.add_string buf (string_of_item item);
         Buffer.add_string buf sep;
         aux tl in
-  let _ = 
+  let _ =
     match l with
       | [] -> ()
       | [sole] -> Buffer.add_string buf (string_of_item sole)
       | _ -> aux l in
   Buffer.contents buf
 
-let string_of_vpkglist = string_of_list string_of_vpkg " , "
+let string_of_vpkglist v = string_of_list string_of_vpkg " , " (Array.to_list v)
 
 (** ASSUMPTION: formula is in CNF *)
 let rec string_of_vpkgformula = function
@@ -158,7 +160,11 @@ let rec string_of_vpkgformula = function
       let string_of_AND = string_of_list string_of_OR " , " in
       string_of_AND fmla
 
-let string_of_veqpkglist l = string_of_vpkglist (l :> vpkglist)
+let string_of_vpkgformula l =
+  string_of_vpkgformula (Array.to_list (Array.map Array.to_list l))
+
+let string_of_veqpkglist (l : veqpkglist) =
+  string_of_vpkglist (Array.of_list (Array.to_list l :> vpkg list))
 let string_of_veqpkg = string_of_vpkg
 
 let string_of_type = function
@@ -191,13 +197,13 @@ let rec string_of_typedecl' (name, decl1) =
 and string_of_value (v: typed_value) = match v with
   | (`Int i | `Posint i | `Nat i) -> string_of_int i
   | `Bool b -> string_of_bool b
-  | (`String s | `Pkgname s | `Ident s | `Enum (_, s)) -> s
+  | (`String s | `Ident s | `Enum (_, s)) -> s
+  | `Pkgname s -> Cudf_types.string_of_pkgname s
   | `Vpkg p -> string_of_vpkg p
   | `Veqpkg p -> string_of_vpkg p
   | `Vpkglist l -> string_of_vpkglist l
-  | `Veqpkglist l -> string_of_veqpkglist l
+  | `Veqpkglist l -> (* string_of_veqpkglist l *) assert false
   | `Vpkgformula f -> string_of_vpkgformula f
   | `Typedecl d -> string_of_typedecl d
 
 and string_of_typedecl decl = string_of_list string_of_typedecl' ", " decl
-

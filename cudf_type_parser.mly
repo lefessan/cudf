@@ -74,10 +74,10 @@ let parse_typename = function
 int_top: int EOL { $1 } ;
 ident_top: ident EOL { $1 } ;
 qstring_top: qstring EOL { $1 } ;
-pkgname_top: pkgname EOL { $1 } ;
+pkgname_top: pkgname EOL { Cudf_types.pkgname_of_string $1 } ;
 vpkg_top: vpkg EOL { $1 } ;
-vpkglist_top: vpkglist EOL { $1 } ;
-vpkgformula_top: vpkgformula EOL { $1 } ;
+vpkglist_top: vpkglist EOL { Array.of_list $1 } ;
+vpkgformula_top: vpkgformula EOL { Array.of_list (List.map Array.of_list $1) } ;
 typedecl_top: typedecl EOL { $1 } ;
 type_top: type_ EOL { $1 } ;
 
@@ -103,8 +103,8 @@ int:
 ;
 
 vpkg:
-  | pkgname			{ ($1, None) }
-  | pkgname relop version	{ ($1, Some ($2, $3)) }
+  | pkgname			{ (Cudf_types.pkgname_of_string $1, `None, 0) }
+  | pkgname relop version	{ (Cudf_types.pkgname_of_string $1, $2, $3) }
 ;
 vpkglist:
   |		{ [] }
@@ -147,8 +147,8 @@ or_formula_ntriv:
   | vpkg PIPE or_formula	{ $1 :: $3 }
 ;
 vpkg_ntriv:
-  | PKGNAME			{ ($1, None) }
-  | pkgname relop version	{ ($1, Some ($2, $3)) }
+  | PKGNAME			{ (Cudf_types.pkgname_of_string $1, `None, 0) }
+  | pkgname relop version	{ (Cudf_types.pkgname_of_string $1, $2, $3) }
 ;
 
 typedecl:
@@ -182,11 +182,11 @@ enums:
 ;
 
 typed_value:
-  |			{ `Vpkglist [] }
+  |			{ `Vpkglist [||] }
   | ident		{ `Ident $1 }
   | int			{ `Int $1 }
   | qstring		{ `String $1 }
-  | vpkgformula_ntriv	{ `Vpkgformula $1 }
+  | vpkgformula_ntriv	{ `Vpkgformula (Array.of_list (List.map Array.of_list $1)) }
 ;
 
 %%

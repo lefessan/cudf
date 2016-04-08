@@ -14,15 +14,45 @@ open ExtLib
 open Printf
 
 type version = int
-type relop = [`Eq|`Neq|`Geq|`Gt|`Leq|`Lt]
+type relop = [`Eq|`Neq|`Geq|`Gt|`Leq|`Lt|`None]
 type constr = (relop * version) option
 
-type pkgname = string
-type vpkg = pkgname * constr
-type vpkglist = vpkg list
-type vpkgformula = vpkg list list
-type veqpkg = pkgname * ([`Eq] * version) option
-type veqpkglist = veqpkg list
+module Pkgname : sig
+  type t
+  val to_string : t -> string
+  val of_string : string -> t
+  val of_int : int -> t
+  val clear : unit -> unit
+
+  module Set : (Set.S with type elt = t)
+end = struct
+
+  type t = string
+
+  let tbl= Hashtbl.create 1111
+  let of_string s =
+    try Hashtbl.find tbl s with Not_found ->
+      Hashtbl.add tbl s s;
+      s
+  let to_string s = s
+  let of_int n = string_of_int n
+  let clear () = Hashtbl.clear tbl
+
+  module Set = Set.Make(String)
+end
+
+type pkgname = Pkgname.t
+let pkgname_of_string = Pkgname.of_string
+let string_of_pkgname = Pkgname.to_string
+let pkgname_of_int = Pkgname.of_int
+let clear_pkgnames = Pkgname.clear
+module PkgnameSet = Pkgname.Set
+
+type vpkg = pkgname * relop * version
+type vpkglist = vpkg array
+type vpkgformula = vpkg array array
+type veqpkg = pkgname * [`Eq | `None] * version
+type veqpkglist = veqpkg array
 type enum_keep = [`Keep_version | `Keep_package | `Keep_feature | `Keep_none ]
 
 type typ =
@@ -41,7 +71,7 @@ type typedecl1 =
 and typedecl = (string * typedecl1) list
 type typed_value =
     [ `Int of int | `Posint of int | `Nat of int | `Bool of bool
-    | `String of string | `Pkgname of string | `Ident of string
+    | `String of string | `Pkgname of pkgname | `Ident of string
     | `Enum of string list * string | `Vpkg of vpkg
     | `Vpkgformula of vpkgformula | `Vpkglist of vpkglist
     | `Veqpkg of veqpkg | `Veqpkglist of veqpkglist
@@ -100,7 +130,7 @@ let typedecl_of_value = function
   | `Nat n -> `Nat (Some n)
   | `Bool b -> `Bool (Some b)
   | `String s -> `String (Some s)
-  | `Pkgname s -> `Pkgname (Some s)
+  | `Pkgname s -> `Pkgname (Some (string_of_pkgname s))
   | `Ident s -> `Ident (Some s)
   | `Enum (enums, s) -> `Enum (enums, Some s)
   | `Vpkg p -> `Vpkg (Some p)
@@ -116,7 +146,7 @@ let value_of_typedecl = function
   | `Nat (Some v) -> Some (`Nat v)
   | `Bool (Some v) -> Some (`Bool v)
   | `String (Some v) -> Some (`String v)
-  | `Pkgname (Some v) -> Some (`Pkgname v)
+  | `Pkgname (Some v) -> Some (`Pkgname (pkgname_of_string v))
   | `Ident (Some v) -> Some (`Ident v)
   | `Enum (enums, (Some v)) -> Some (`Enum (enums, v))
   | `Vpkg (Some v) -> Some (`Vpkg v)
@@ -150,55 +180,55 @@ let rec cast typ v =
     | `Nat, `Int n when n >= 0 -> `Nat n
     | `Bool, `Ident "true" -> `Bool true
     | `Bool, `Ident "false" -> `Bool false
-    | `Pkgname, `Vpkgformula [[(pkg, None)]] -> `Pkgname pkg
-    | `Pkgname, (`Int n | `Posint n | `Nat n) -> `Pkgname (string_of_int n)
-    | `Pkgname, `Ident i-> `Pkgname i
+    | `Pkgname, `Vpkgformula [| [| (pkg, `None, _)|]|] -> `Pkgname pkg
+    | `Pkgname, (`Int n | `Posint n | `Nat n) -> `Pkgname (pkgname_of_int n)
+    | `Pkgname, `Ident i-> `Pkgname (pkgname_of_string i)
     | (`Vpkg | `Veqpkg | `Vpkglist | `Veqpkglist),
       (`Int n | `Posint n | `Nat n) ->
-	cast typ (`Vpkgformula [[string_of_int n, None]])
+	cast typ (`Vpkgformula [| [| pkgname_of_int n, `None, 0 |] |])
     | (`Vpkg | `Veqpkg | `Vpkglist | `Veqpkglist), `Ident i ->
-	cast typ (`Vpkgformula [[i, None]])
-    | `Vpkg, `Vpkgformula [[vpkg]] -> `Vpkg vpkg
+	cast typ (`Vpkgformula [| [| pkgname_of_string i, `None, 0 |] |])
+    | `Vpkg, `Vpkgformula [| [|vpkg|] |] -> `Vpkg vpkg
     | (`Vpkglist | `Veqpkglist),
-      (`Vpkgformula [] (* "true!" *) | `Vpkgformula [ [] ] (* "false!" *)) ->
+      (`Vpkgformula [||] (* "true!" *) | `Vpkgformula [| [||] |] (* "false!" *)) ->
         type_error ()
     | `Vpkglist, `Vpkgformula f ->
-	if List.exists (function _ :: _ :: _ -> true | _ -> false) f then
+	if Array.exists (function a -> Array.length a >= 2) f then
 	  type_error ()	(* there are OR-ed deps *)
 	else
-	  `Vpkglist (List.map (function [vpkg] -> vpkg | _ -> assert false) f)
-    | `Veqpkg, `Vpkgformula [[ (_, (Some (`Eq, _) | None)) as vpkg ]] ->
+	  `Vpkglist (Array.map (function [|vpkg|] -> vpkg | _ -> assert false) f)
+    | `Veqpkg, `Vpkgformula [| [| (_, ( `Eq | `None ), _) as vpkg |]|] ->
 	`Veqpkg vpkg
     | `Veqpkglist, `Vpkgformula f ->
 	`Veqpkglist
-	  (List.fold_right
+	  (Array.of_list (List.fold_right
 	     (fun or_deps veqpkgs ->
 		match or_deps with
-		  | [ (_, (Some (`Eq, _) | None)) as vpkg ] -> vpkg :: veqpkgs
+		  | [| (_, (`Eq|`None), _) as vpkg |] -> vpkg :: veqpkgs
 		  | _ -> type_error ())
-	     f [])
-    | `Veqpkg, `Vpkg ((_, (Some (`Eq, _) | None)) as vpkg) -> `Veqpkg vpkg
+	     (Array.to_list f) []))
+    | `Veqpkg, `Vpkg ((_, (`Eq|`None), _) as vpkg) -> `Veqpkg vpkg
     | `Veqpkglist, `Vpkglist l ->
-	`Veqpkglist
+      `Veqpkglist
+        (Array.of_list
 	  (List.fold_right
 	     (fun vpkg veqpkgs ->
 		match vpkg with
-		  | (_, (Some (`Eq, _) | None)) as vpkg -> vpkg :: veqpkgs
+		  | (_, (`Eq|`None), _) as vpkg -> vpkg :: veqpkgs
 		  | _ -> type_error ())
-	     l [])
+	     (Array.to_list l) []))
     | `Enum enums, `Ident i when List.mem i enums -> `Enum (enums, i)
-    | `Vpkgformula, `Ident i -> `Vpkgformula [[i, None]]
-    | `Vpkgformula, `Int n -> `Vpkgformula [[string_of_int n, None]]
+    | `Vpkgformula, `Ident i -> `Vpkgformula [| [| pkgname_of_string i, `None, 0 |] |]
+    | `Vpkgformula, `Int n -> `Vpkgformula [| [| pkgname_of_int n, `None, 0 |]|]
     | typ, v when type_of_value v = typ -> v	(* identity cast *)
     | _ -> type_error ()
 
 let rec is_eq_formula f =
-  not (List.exists
+  not (Array.exists
 	 (fun vpkgs ->
-	    List.exists
+	    Array.exists
 	      (function
-		 | (_, Some ((`Neq | `Geq | `Gt | `Leq | `Lt), _)) -> true
+		 | (_, (`Neq | `Geq | `Gt | `Leq | `Lt), _) -> true
 		 | _ -> false)
 	      vpkgs)
 	 f)
-
